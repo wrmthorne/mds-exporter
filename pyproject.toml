@@ -1,0 +1,41 @@
+[project]
+name = "mds-exporter"
+version = "0.1.0"
+description = "A CLI tool for bulk downloading from museum data service API with rich progress tracking."
+readme = "README.md"
+authors = [
+    { name = "William Thorne", email = "wthorne1@sheffield.ac.uk" }
+]
+license = { text = "MIT" }
+keywords = ["museum", "data", "cli", "bulk-download", "api"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+]
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.2.1",
+    "httpx>=0.28.1",
+    "requests>=2.32.4",
+    "rich>=14.1.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/wrmthorne/mds-exporter"
+"Bug Reports" = "https://github.com/wrmthorne/mds-exporter/issues"
+"Source" = "https://github.com/wrmthorne/mds-exporter"
+
+[project.scripts]
+mds-exporter = "mds_exporter:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
