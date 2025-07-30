@@ -1,10 +1,10 @@
 # MDS Exporter
 
-A simple CLI tool, written in Python, to manage MDS resume tokens and download data from the MDS API.
+A simple CLI tool, written in Python, to manage [Museum Data Service](https://museumdata.uk/) (MDS) resume API tokens and download data from the MDS API.
 
 ## Installation
 
-The recommended way to install the tool is to use the `pipx` package manager. This will make the `mds-exporter` command available system-wide.
+The recommended way to install the tool is to use the `pipx` package manager. This will make the `mds` command available system-wide.
 
 ```bash
 pipx install mds-exporter
