@@ -26,7 +26,7 @@ Each stored token keeps track of three versions to help you pick up where you le
 `last`: Whatever token was used most recently - keeps track of where you are in any current download <br/>
 `latest`: The token from your most complete download (the one that got the farthest) <br/>
 
-This setup gives you options when things go wrong. You can always use `base` to start over completely. If a download gets interrupted, `last` lets you resume right where you stopped. And `latest` stays safe and untouched, so you can always go back to refreshing your best/most complete dataset without messing up your current download progress.
+This setup gives you options when things go wrong or go missing. You can always use `base` to redownload the whole dataset from the start. If a download gets interrupted, `last` lets you resume right where you stopped. And `latest` stays safe and untouched, so you can always go back to refreshing your best/most complete dataset without messing up your current download progress.
 
 
 ### Token Management
