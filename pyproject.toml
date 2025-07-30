@@ -35,7 +35,7 @@ dependencies = [
 "Source" = "https://github.com/wrmthorne/mds-exporter"
 
 [project.scripts]
-mds-exporter = "mds_exporter:main"
+mds = "mds_exporter:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -35,16 +35,16 @@ Store and manage MDS API tokens:
 
 ```bash
 # Add a token with auto-generated name (e.g., "ancient-river")
-mds-exporter token add YOUR_MDS_TOKEN
+mds token add YOUR_MDS_TOKEN
 
 # Add a token with custom name
-mds-exporter token add --name my-token YOUR_MDS_TOKEN
+mds token add --name my-token YOUR_MDS_TOKEN
 
 # List all stored tokens
-mds-exporter token list
+mds token list
 
 # Remove a token
-mds-exporter token remove my-token
+mds token remove my-token
 ```
 
 ### Downloading Data
@@ -53,18 +53,18 @@ Download MDS data using stored tokens or direct tokens:
 
 ```bash
 # Download using stored token (uses 'last' version by default)
-mds-exporter download --name my-token
+mds download --name my-token
 
 # Download using specific token version
-mds-exporter download --name my-token:latest
-mds-exporter download --name my-token:base
+mds download --name my-token:latest
+mds download --name my-token:base
 
 # Download using direct token
-mds-exporter download --token YOUR_MDS_TOKEN
+mds download --token YOUR_MDS_TOKEN
 
 # Specify output file
-mds-exporter download --name my-token --output my-data.jsonl
+mds download --name my-token --output my-data.jsonl
 
 # Compress output using zstd (recommended for large datasets)
-mds-exporter download --name my-token --compress --output my-data
+mds download --name my-token --compress --output my-data
 ```
