@@ -26,7 +26,7 @@ except ImportError:
     )
 
 
-EXTRACT_URL = "https://mds-data-1.ciim.k-int.com/api/v1/extract"
+EXTRACT_URL = "https://mds-data.ciim.k-int.com/api/v1/extract"
 
 
 def write_data_batch(data, output_file, compress, compressor):
