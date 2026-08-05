@@ -1,6 +1,6 @@
 [project]
 name = "mds-exporter"
-version = "0.3.0"
+version = "0.3.1"
 description = "A CLI tool for bulk downloading from museum data service API with rich progress tracking."
 readme = "README.md"
 authors = [
