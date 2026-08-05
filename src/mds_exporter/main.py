@@ -1,4 +1,6 @@
+from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import Any
 import json
 import asyncio
 import sqlite3
@@ -8,65 +10,69 @@ import httpx
 import zstandard as zstd
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
 
-try:
-    from .token_storage import (
-        add_token,
-        list_tokens,
-        remove_token,
-        get_token,
-        update_token,
-    )
-except ImportError:
-    from token_storage import (
-        add_token,
-        list_tokens,
-        remove_token,
-        get_token,
-        update_token,
-    )
+from .token_storage import add_token, list_tokens, remove_token, get_token, update_token
 
 
-EXTRACT_URL = "https://mds-data.ciim.k-int.com/api/v1/extract"
+# The API is moving to api.museumdata.uk. Try the current host first and fall back to the new one
+# so the tool keeps working either side of the switch.
+EXTRACT_URLS = (
+    "https://mds-data.ciim.k-int.com/api/v1/extract",
+    "https://api.museumdata.uk/api/v1/extract",
+)
+
+DATA_SUFFIXES = {".json", ".jsonl", ".zst", ".zstd"}
 
 
-def write_data_batch(data, output_file, compress, compressor):
-    """Write a batch of data to file, handling both compressed and uncompressed formats."""
-    if compress:
+def resolve_output_path(output_file: Path, compress: bool) -> Path:
+    """Normalise an output path to .jsonl or .jsonl.zst, replacing any data suffixes already present."""
+    while output_file.suffix in DATA_SUFFIXES:
+        output_file = output_file.with_suffix("")
+    suffix = ".jsonl.zst" if compress else ".jsonl"
+    return output_file.with_name(output_file.name + suffix)
+
+
+def write_data_batch(data: Iterable[Any], output_file: Path, compressor: zstd.ZstdCompressor | None) -> None:
+    """Append a batch of records as JSON lines, compressing them when a compressor is given."""
+    lines = "".join(json.dumps(item) + "\n" for item in data)
+    if compressor is None:
+        with open(output_file, "a") as f:
+            f.write(lines)
+    else:
         with open(output_file, "ab") as f:
             with compressor.stream_writer(f) as writer:
-                for item in data:
-                    writer.write((json.dumps(item) + "\n").encode())
-    else:
-        with open(output_file, "a") as f:
-            for item in data:
-                f.write(json.dumps(item) + "\n")
+                writer.write(lines.encode())
+
+
+async def fetch_extract(client: httpx.AsyncClient, resumption_token: str) -> dict[str, Any]:
+    """Fetch the first batch, trying each known API host in turn."""
+    last_error: httpx.HTTPError | None = None
+    for url in EXTRACT_URLS:
+        try:
+            response = await client.get(url, params={"resume": resumption_token})
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as error:
+            last_error = error
+
+    raise click.ClickException(f"Could not reach the MDS extract API: {last_error}")
 
 
 async def download_data(
     output_file: Path,
     resumption_token: str,
-    token_name: str = None,
+    token_name: str | None = None,
     compress: bool = False,
-):
+) -> None:
     if not resumption_token:
         raise ValueError("Resumption token is required")
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file = resolve_output_path(output_file, compress)
 
-    # Set file extension based on compression
-    if compress:
-        output_file = output_file.with_suffix(".zstd")
-    else:
-        output_file = output_file.with_suffix(".jsonl")
-
-    # Create compressor if needed
     compressor = zstd.ZstdCompressor() if compress else None
 
     async with httpx.AsyncClient(timeout=120) as client:
-        response = await client.get(EXTRACT_URL, params={"resume": resumption_token})
-        response.raise_for_status()
-
-        resp_json = response.json()
+        resp_json = await fetch_extract(client, resumption_token)
 
         if not resp_json.get("found", True):
             raise click.ClickException(
@@ -78,9 +84,7 @@ async def download_data(
         remaining = stats.get("remaining", 0)
 
         if total == 0:
-            raise click.ClickException(
-                "No data available for this token."
-            )
+            raise click.ClickException("No data available for this token.")
 
         completed = total - remaining
 
@@ -97,42 +101,40 @@ async def download_data(
             while True:
                 # Write current batch
                 data = resp_json.get("data", [])
-                write_data_batch(data, output_file, compress, compressor)
+                write_data_batch(data, output_file, compressor)
                 progress.update(task, advance=len(data))
 
                 # Update token after each batch
                 if resp_json.get("resume") and token_name:
                     remaining = resp_json.get("stats", {}).get("remaining", 0)
-                    update_token(token_name, resp_json.get("resume"), remaining)
+                    update_token(token_name, resp_json["resume"], remaining)
 
                 # Check if more pages exist
                 if not resp_json.get("has_next"):
                     break
 
                 # Fetch next page
-                response = await client.get(resp_json.get("next_url"))
+                response = await client.get(resp_json["next_url"])
                 response.raise_for_status()
                 resp_json = response.json()
 
 
 @click.group()
-def main():
+def main() -> None:
     """MDS Exporter - Manage tokens and download MDS data"""
     pass
 
 
 @main.group()
-def token():
+def token() -> None:
     """Manage MDS API tokens"""
     pass
 
 
 @token.command()
-@click.option(
-    "--name", help="Optional name for the token (random name generated if not provided)"
-)
+@click.option("--name", help="Optional name for the token (random name generated if not provided)")
 @click.argument("mds_token")
-def add(name, mds_token):
+def add(name: str | None, mds_token: str) -> None:
     """Add a new MDS token"""
     try:
         assigned_name = add_token(mds_token, name)
@@ -142,40 +144,68 @@ def add(name, mds_token):
 
 
 @token.command()
-def list():
+def list() -> None:
     """List all stored tokens"""
     list_tokens()
 
 
 @token.command()
 @click.argument("name")
-def remove(name):
+def show(name: str) -> None:
+    """Print a stored token in full, for copying elsewhere.
+
+    Accepts name:version, defaulting to the 'last' version.
+    """
+    click.echo(get_token(name))
+
+
+@token.command()
+@click.argument("name")
+def remove(name: str) -> None:
     """Remove a token by name"""
     remove_token(name)
 
 
-@main.command()
-@click.option("--name", help="Name of stored token (mutually exclusive with --token)")
-@click.option("--token", help="MDS API token (mutually exclusive with --name)")
-@click.option("--output", default="downloads.jsonl", help="Output JSONL file path")
-@click.option("--compress", is_flag=True, help="Compress output using zstd")
-def download(name, token, output, compress):
-    """Download MDS data"""
-    if not name and not token:
-        raise click.ClickException("Must specify either --name or --token")
+EXTRACT_OPTIONS = (
+    click.option("--name", help="Name of stored token (mutually exclusive with --token)"),
+    click.option("--token", help="MDS API token (mutually exclusive with --name)"),
+    click.option("--output", default="downloads.jsonl", help="Output JSONL file path"),
+    click.option("--compress", is_flag=True, help="Compress output using zstd"),
+)
+
+
+def extract_options(command: Callable[..., Any]) -> Callable[..., Any]:
+    for option in reversed(EXTRACT_OPTIONS):
+        command = option(command)
+    return command
+
+
+def run_extract(name: str | None, token: str | None, output: str, compress: bool) -> None:
     if name and token:
         raise click.ClickException("Cannot specify both --name and --token")
 
     if name:
         resumption_token = get_token(name)
         token_name = name.split(":")[0]  # Extract base name for updates
-    else:
+    elif token:
         resumption_token = token
         token_name = None
+    else:
+        raise click.ClickException("Must specify either --name or --token")
 
     output_file = Path(output)
     asyncio.run(download_data(output_file, resumption_token, token_name, compress))
 
 
-if __name__ == "__main__":
-    main()
+@main.command()
+@extract_options
+def extract(name: str | None, token: str | None, output: str, compress: bool) -> None:
+    """Extract MDS data"""
+    run_extract(name, token, output, compress)
+
+
+@main.command(deprecated="`download` is deprecated and will be removed in a future version. Use 'mds extract' instead.")
+@extract_options
+def download(name: str | None, token: str | None, output: str, compress: bool) -> None:
+    """Deprecated alias for 'extract'"""
+    run_extract(name, token, output, compress)

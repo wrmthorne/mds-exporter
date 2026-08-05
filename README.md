@@ -4,13 +4,25 @@ A simple CLI tool, written in Python, to manage [Museum Data Service](https://mu
 
 ## Installation
 
-The recommended way to install the tool is to use the `pipx` package manager. This will make the `mds` command available system-wide.
+Install with [uv](https://docs.astral.sh/uv/). This makes the `mds` command available system-wide:
 
 ```bash
-pipx install mds-exporter
+uv tool install mds-exporter
 ```
 
-It can also be installed to a specific environment:
+To run it once without installing anything:
+
+```bash
+uvx mds-exporter --help
+```
+
+To add it to an existing project instead:
+
+```bash
+uv add mds-exporter
+```
+
+Or with pip:
 
 ```bash
 pip install mds-exporter
@@ -43,28 +55,62 @@ mds token add --name my-token YOUR_MDS_TOKEN
 # List all stored tokens
 mds token list
 
+# Print a token in full so it can be copied (defaults to the 'last' version)
+mds token show my-token
+mds token show my-token:base
+
 # Remove a token
 mds token remove my-token
 ```
 
-### Downloading Data
+`mds token list` truncates tokens so they stay readable in a table. Use `mds token show` when you need the whole value.
 
-Download MDS data using stored tokens or direct tokens:
+### Extracting Data
+
+Extract MDS data using stored tokens or direct tokens:
 
 ```bash
-# Download using stored token (uses 'last' version by default)
-mds download --name my-token
+# Extract using stored token (uses 'last' version by default)
+mds extract --name my-token
 
-# Download using specific token version
-mds download --name my-token:latest
-mds download --name my-token:base
+# Extract using specific token version
+mds extract --name my-token:latest
+mds extract --name my-token:base
 
-# Download using direct token
-mds download --token YOUR_MDS_TOKEN
+# Extract using direct token
+mds extract --token YOUR_MDS_TOKEN
 
 # Specify output file
-mds download --name my-token --output my-data.jsonl
+mds extract --name my-token --output my-data.jsonl
 
 # Compress output using zstd (recommended for large datasets)
-mds download --name my-token --compress --output my-data
+mds extract --name my-token --compress --output my-data
+```
+
+The extension on `--output` is normalised for you. Data is written as `.jsonl`, or `.jsonl.zst` with `--compress`.
+
+`mds download` still works as an alias but is deprecated and prints a warning. Use `mds extract`.
+
+## Development
+
+```bash
+uv sync
+uv run pre-commit install
+```
+
+`pre-commit` runs ruff, [pyrefly](https://pyrefly.org/) type checking, and the pytest suite. To run any of them on their own:
+
+```bash
+uv run pytest
+uv run pyrefly check
+uv run pre-commit run --all-files
+```
+
+Or with pip, using the exported `requirements.txt`:
+
+```bash
+pip install -r requirements.txt
+pip install -e . --no-deps
+pytest
+pyrefly check
 ```

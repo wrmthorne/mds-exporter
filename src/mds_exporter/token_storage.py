@@ -194,12 +194,12 @@ NOUNS = [
 ]
 
 
-def generate_name():
+def generate_name() -> str:
     """Generate a random name in the format 'adjective-noun'."""
     return f"{random.choice(ADJECTIVES)}-{random.choice(NOUNS)}"
 
 
-def get_db_path():
+def get_db_path() -> Path:
     """Get the path to the token database file."""
     home = Path.home()
     db_dir = home / ".local" / "share" / "mds-exporter"
@@ -207,7 +207,7 @@ def get_db_path():
     return db_dir / "tokens.db"
 
 
-def init_db():
+def init_db() -> None:
     """Initialize the token database with the required schema."""
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
@@ -224,7 +224,7 @@ def init_db():
     conn.close()
 
 
-def add_token(token: str, name: str = None):
+def add_token(token: str, name: str | None = None) -> str:
     """Add a new token to the database with optional custom name."""
     init_db()
     db_path = get_db_path()
@@ -249,15 +249,13 @@ def add_token(token: str, name: str = None):
         conn.close()
 
 
-def list_tokens():
+def list_tokens() -> None:
     """List all stored tokens in a formatted table."""
     init_db()
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     try:
-        cursor = conn.execute(
-            "SELECT name, base, last, latest, least_remaining FROM tokens"
-        )
+        cursor = conn.execute("SELECT name, base, last, latest, least_remaining FROM tokens")
         rows = cursor.fetchall()
 
         console = Console()
@@ -282,7 +280,7 @@ def list_tokens():
         conn.close()
 
 
-def remove_token(name: str):
+def remove_token(name: str) -> None:
     """Remove a token from the database by name."""
     init_db()
     db_path = get_db_path()
@@ -298,7 +296,7 @@ def remove_token(name: str):
         conn.close()
 
 
-def get_token(name_spec: str):
+def get_token(name_spec: str) -> str:
     """Get a token by name and version (name:version format supported)."""
     init_db()
     db_path = get_db_path()
@@ -311,17 +309,11 @@ def get_token(name_spec: str):
             elif version == "last":
                 cursor = conn.execute("SELECT last FROM tokens WHERE name = ?", (name,))
             elif version == "latest":
-                cursor = conn.execute(
-                    "SELECT latest FROM tokens WHERE name = ?", (name,)
-                )
+                cursor = conn.execute("SELECT latest FROM tokens WHERE name = ?", (name,))
             else:
-                raise click.ClickException(
-                    f"Invalid version '{version}'. Use base, last, or latest"
-                )
+                raise click.ClickException(f"Invalid version '{version}'. Use base, last, or latest")
         else:
-            cursor = conn.execute(
-                "SELECT last FROM tokens WHERE name = ?", (name_spec,)
-            )
+            cursor = conn.execute("SELECT last FROM tokens WHERE name = ?", (name_spec,))
 
         row = cursor.fetchone()
         if not row:
@@ -331,7 +323,7 @@ def get_token(name_spec: str):
         conn.close()
 
 
-def update_token(name: str, new_token: str, remaining: int):
+def update_token(name: str, new_token: str, remaining: int) -> None:
     """Update a token's last and potentially latest values based on remaining count."""
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
@@ -340,9 +332,7 @@ def update_token(name: str, new_token: str, remaining: int):
         conn.execute("UPDATE tokens SET last = ? WHERE name = ?", (new_token, name))
 
         # Update latest if this has fewer remaining
-        cursor = conn.execute(
-            "SELECT least_remaining FROM tokens WHERE name = ?", (name,)
-        )
+        cursor = conn.execute("SELECT least_remaining FROM tokens WHERE name = ?", (name,))
         row = cursor.fetchone()
         if row and remaining < row[0]:
             conn.execute(
