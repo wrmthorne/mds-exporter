@@ -19,6 +19,20 @@ def test_get_db_path_creates_directory(isolated_home: Path) -> None:
     assert db_path.parent.is_dir()
 
 
+def test_connect_enables_wal() -> None:
+    with token_storage.connect() as conn:
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+
+
+def test_writes_while_another_connection_reads() -> None:
+    token_storage.add_token("abc123", "my-token")
+    with token_storage.connect() as reader:
+        reader.execute("SELECT * FROM tokens").fetchall()
+        token_storage.update_token("my-token", "def456", remaining=10)
+
+    assert token_storage.get_token("my-token") == "def456"
+
+
 def test_add_token_with_explicit_name() -> None:
     assert token_storage.add_token("abc123", "my-token") == "my-token"
     assert token_storage.get_token("my-token") == "abc123"

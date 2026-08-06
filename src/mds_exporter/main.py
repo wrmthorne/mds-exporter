@@ -70,53 +70,66 @@ async def download_data(
     output_file = resolve_output_path(output_file, compress)
 
     compressor = zstd.ZstdCompressor() if compress else None
+    unsaved_resume: str | None = None
 
-    async with httpx.AsyncClient(timeout=120) as client:
-        resp_json = await fetch_extract(client, resumption_token)
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp_json = await fetch_extract(client, resumption_token)
 
-        if not resp_json.get("found", True):
-            raise click.ClickException(
-                "Token not found or expired. The API could not locate data for this resumption token."
-            )
+            if not resp_json.get("found", True):
+                raise click.ClickException(
+                    "Token not found or expired. The API could not locate data for this resumption token."
+                )
 
-        stats = resp_json.get("stats", {})
-        total = stats.get("total", 0)
-        remaining = stats.get("remaining", 0)
+            stats = resp_json.get("stats", {})
+            total = stats.get("total", 0)
+            remaining = stats.get("remaining", 0)
 
-        if total == 0:
-            raise click.ClickException("No data available for this token.")
+            if total == 0:
+                raise click.ClickException("No data available for this token.")
 
-        completed = total - remaining
+            # remaining excludes the batch it arrives with, so the first batch is not yet accounted for.
+            completed = total - remaining - len(resp_json.get("data", []))
 
-        with Progress(
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TextColumn("({task.completed}/{task.total})"),
-            TimeRemainingColumn(),
-        ) as progress:
-            task = progress.add_task("Downloading", total=total, completed=completed)
+            with Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TextColumn("({task.completed}/{task.total})"),
+                TimeRemainingColumn(),
+            ) as progress:
+                task = progress.add_task("Downloading", total=total, completed=completed)
 
-            # Process all batches (initial + pagination)
-            while True:
-                # Write current batch
-                data = resp_json.get("data", [])
-                write_data_batch(data, output_file, compressor)
-                progress.update(task, advance=len(data))
+                # Process all batches (initial + pagination)
+                while True:
+                    # Write current batch
+                    data = resp_json.get("data", [])
+                    write_data_batch(data, output_file, compressor)
+                    progress.update(task, advance=len(data))
 
-                # Update token after each batch
-                if resp_json.get("resume") and token_name:
-                    remaining = resp_json.get("stats", {}).get("remaining", 0)
-                    update_token(token_name, resp_json["resume"], remaining)
+                    # Update token after each batch
+                    if resp_json.get("resume") and token_name:
+                        remaining = resp_json.get("stats", {}).get("remaining", 0)
+                        try:
+                            update_token(token_name, resp_json["resume"], remaining)
+                            unsaved_resume = None
+                        except sqlite3.Error as error:
+                            # Losing the bookkeeping write is not worth abandoning a download of this length.
+                            if unsaved_resume is None:
+                                progress.console.print(f"[yellow]Could not record the resume token: {error}[/yellow]")
+                            unsaved_resume = resp_json["resume"]
 
-                # Check if more pages exist
-                if not resp_json.get("has_next"):
-                    break
+                    # Check if more pages exist
+                    if not resp_json.get("has_next"):
+                        break
 
-                # Fetch next page
-                response = await client.get(resp_json["next_url"])
-                response.raise_for_status()
-                resp_json = response.json()
+                    # Fetch next page
+                    response = await client.get(resp_json["next_url"])
+                    response.raise_for_status()
+                    resp_json = response.json()
+    finally:
+        if unsaved_resume:
+            click.echo(f"Resume this extract with: --token {unsaved_resume}")
 
 
 @click.group()
@@ -204,7 +217,9 @@ def extract(name: str | None, token: str | None, output: str, compress: bool) ->
     run_extract(name, token, output, compress)
 
 
-@main.command(deprecated="`download` is deprecated and will be removed in a future version. Use 'mds extract' instead.")
+@main.command(
+    deprecated="`download` is deprecated and will be removed in a future version. Use 'mds extract' instead."
+)
 @extract_options
 def download(name: str | None, token: str | None, output: str, compress: bool) -> None:
     """Deprecated alias for 'extract'"""

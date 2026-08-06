@@ -192,6 +192,22 @@ class TestDownloadData:
         assert token_storage.get_token("my-token:last") == "def456"
         assert token_storage.get_token("my-token:base") == "abc123"
 
+    def test_continues_when_the_token_database_is_locked(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        token_storage.add_token("abc123", "my-token")
+        page = extract_page([{"id": 1}], resume="def456")
+        self.install_transport(monkeypatch, lambda request: httpx.Response(200, json=page))
+
+        monkeypatch.setattr(token_storage, "BUSY_TIMEOUT_SECONDS", 0)
+
+        with token_storage.connect() as blocker:
+            blocker.execute("BEGIN EXCLUSIVE")
+            asyncio.run(download_data(tmp_path / "out", "abc123", token_name="my-token"))
+
+        assert (tmp_path / "out.jsonl").read_text() == '{"id": 1}\n'
+        assert "def456" in capsys.readouterr().out
+
     def test_rejects_empty_resumption_token(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="Resumption token is required"):
             asyncio.run(download_data(tmp_path / "out", ""))

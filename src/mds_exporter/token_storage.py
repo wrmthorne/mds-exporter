@@ -1,5 +1,7 @@
 import sqlite3
 import random
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import click
@@ -207,101 +209,90 @@ def get_db_path() -> Path:
     return db_dir / "tokens.db"
 
 
-def init_db() -> None:
-    """Initialize the token database with the required schema."""
-    db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS tokens (
-            name TEXT PRIMARY KEY,
-            base TEXT NOT NULL,
-            last TEXT NOT NULL,
-            latest TEXT NOT NULL,
-            least_remaining INTEGER NOT NULL
-        )
-    """)
-    conn.commit()
-    conn.close()
+# An extract writes a token after every batch, so wait out a concurrent writer instead of failing immediately.
+BUSY_TIMEOUT_SECONDS = 30
+
+
+@contextmanager
+def connect() -> Iterator[sqlite3.Connection]:
+    """Open the token database, creating the schema on first use."""
+    conn = sqlite3.connect(get_db_path(), timeout=BUSY_TIMEOUT_SECONDS)
+    try:
+        # WAL stops a reader blocking the writer, which is how a second `mds` process locks out a running extract.
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tokens (
+                name TEXT PRIMARY KEY,
+                base TEXT NOT NULL,
+                last TEXT NOT NULL,
+                latest TEXT NOT NULL,
+                least_remaining INTEGER NOT NULL
+            )
+        """)
+        conn.commit()
+        yield conn
+    finally:
+        conn.close()
 
 
 def add_token(token: str, name: str | None = None) -> str:
     """Add a new token to the database with optional custom name."""
-    init_db()
-    db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
+    with connect() as conn:
+        if not name:
+            # Generate a unique name
+            while True:
+                name = generate_name()
+                cursor = conn.execute("SELECT name FROM tokens WHERE name = ?", (name,))
+                if not cursor.fetchone():
+                    break
 
-    if not name:
-        # Generate a unique name
-        while True:
-            name = generate_name()
-            cursor = conn.execute("SELECT name FROM tokens WHERE name = ?", (name,))
-            if not cursor.fetchone():
-                break
-
-    try:
         conn.execute(
             "INSERT INTO tokens (name, base, last, latest, least_remaining) VALUES (?, ?, ?, ?, ?)",
             (name, token, token, token, float("inf")),
         )
         conn.commit()
         return name
-    finally:
-        conn.close()
 
 
 def list_tokens() -> None:
     """List all stored tokens in a formatted table."""
-    init_db()
-    db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
-    try:
-        cursor = conn.execute("SELECT name, base, last, latest, least_remaining FROM tokens")
-        rows = cursor.fetchall()
+    with connect() as conn:
+        rows = conn.execute("SELECT name, base, last, latest, least_remaining FROM tokens").fetchall()
 
-        console = Console()
-        table = Table()
-        table.add_column("Name")
-        table.add_column("Base")
-        table.add_column("Last")
-        table.add_column("Latest")
-        table.add_column("Least Remaining")
+    console = Console()
+    table = Table()
+    table.add_column("Name")
+    table.add_column("Base")
+    table.add_column("Last")
+    table.add_column("Latest")
+    table.add_column("Least Remaining")
 
-        for row in rows:
-            table.add_row(
-                row[0],
-                row[1][:20] + "...",
-                row[2][:20] + "...",
-                row[3][:20] + "...",
-                str(row[4]),
-            )
+    for row in rows:
+        table.add_row(
+            row[0],
+            row[1][:20] + "...",
+            row[2][:20] + "...",
+            row[3][:20] + "...",
+            str(row[4]),
+        )
 
-        console.print(table)
-    finally:
-        conn.close()
+    console.print(table)
 
 
 def remove_token(name: str) -> None:
     """Remove a token from the database by name."""
-    init_db()
-    db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
-    try:
+    with connect() as conn:
         cursor = conn.execute("DELETE FROM tokens WHERE name = ?", (name,))
         if cursor.rowcount == 0:
             click.echo(f"Token '{name}' not found")
         else:
             click.echo(f"Removed token '{name}'")
         conn.commit()
-    finally:
-        conn.close()
 
 
 def get_token(name_spec: str) -> str:
     """Get a token by name and version (name:version format supported)."""
-    init_db()
-    db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
-    try:
+    with connect() as conn:
         if ":" in name_spec:
             name, version = name_spec.split(":", 1)
             if version == "base":
@@ -319,15 +310,11 @@ def get_token(name_spec: str) -> str:
         if not row:
             raise click.ClickException(f"Token '{name_spec}' not found")
         return row[0]
-    finally:
-        conn.close()
 
 
 def update_token(name: str, new_token: str, remaining: int) -> None:
     """Update a token's last and potentially latest values based on remaining count."""
-    db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
-    try:
+    with connect() as conn:
         # Update last token
         conn.execute("UPDATE tokens SET last = ? WHERE name = ?", (new_token, name))
 
@@ -341,5 +328,3 @@ def update_token(name: str, new_token: str, remaining: int) -> None:
             )
 
         conn.commit()
-    finally:
-        conn.close()
