@@ -1,6 +1,6 @@
 # MDS Exporter
 
-A simple CLI tool, written in Python, to manage [Museum Data Service](https://museumdata.uk/) (MDS) resume API tokens and download data from the MDS API.
+A simple CLI tool, written in Python, to manage [Museum Data Service](https://museumdata.uk/) (MDS) resume API tokens and download data from the [MDS Extract API](https://museumdata.uk/using-data/our-apis/).
 
 ## Installation
 
@@ -43,7 +43,7 @@ This setup gives you options when things go wrong or go missing. You can always 
 
 ### Token Management
 
-Store and manage MDS API tokens:
+Store and manage MDS Extract API tokens:
 
 ```bash
 # Add a token with auto-generated name (e.g., "ancient-river")
